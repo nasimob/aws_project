@@ -3,21 +3,28 @@ from loguru import logger
 import os
 import time
 from telebot.types import InputFile
-
+import boto3
+from botocore.exceptions import ClientError
+from collections import Counter
+import json
 
 class Bot:
 
     def __init__(self, token, telegram_chat_url):
         # create a new instance of the TeleBot class.
         # all communication with Telegram servers are done using self.telegram_bot_client
+        #TODO how to make your bot connect with aws(done)
+        region_name = os.environ['REGION']
+        self.session = boto3.Session(region_name=region_name)
         self.telegram_bot_client = telebot.TeleBot(token)
 
         # remove any existing webhooks configured in Telegram servers
         self.telegram_bot_client.remove_webhook()
         time.sleep(0.5)
 
-        # set the webhook URL
-        self.telegram_bot_client.set_webhook(url=f'{telegram_chat_url}/{token}/', timeout=60)
+        # TODO set the webhook URL with certificate(done)
+        self.telegram_bot_client.set_webhook(url=f'{telegram_chat_url}/{token}/', timeout=60, certificate=open(
+            'cert.pem', 'r'))
 
         logger.info(f'Telegram Bot information\n\n{self.telegram_bot_client.get_me()}')
 
@@ -66,12 +73,66 @@ class Bot:
 
 
 class ObjectDetectionBot(Bot):
+    def handle_dynamo_message(self, dynamo_message):
+        class_names = [label['M']['class']['S'] for label in dynamo_message['labels']]
+        formatted_string = f'Objects Detected:\n'
+        class_counts = Counter(class_names)
+        json_string = json.dumps(class_counts)
+        counts_dict = json.loads(json_string)
+        for key, value in counts_dict.items():
+            formatted_string += f'{key}: {value}\n'
+        return formatted_string
+
+    def get_item_by_prediction_id(self, prediction_id):
+        dynamodb_client = self.session.client('dynamodb')
+        dynamo_tbl = os.environ['DYNAMO_TBL']
+        try:
+            response = dynamodb_client.get_item(TableName=dynamo_tbl,Key={'prediction_id': {'S': prediction_id}})
+            pred_summary = response.get('Item', None)
+            if pred_summary:
+                pred_summary = {k: list(v.values())[0] for k, v in pred_summary.items()}
+                return pred_summary
+            else:
+                print(f"No item found with prediction_id: {prediction_id}")
+                return None
+        except Exception as e:
+            print(f"Error fetching item from DynamoDB: {e}")
+            return None
+
+    def send_message_to_sqs(self, msg_body):
+        sqs_client = self.session.client('sqs')
+        queue_url = os.environ['QUEUE_URL']
+        try:
+            response = sqs_client.send_message(
+                QueueUrl=queue_url,
+                MessageBody=msg_body
+            )
+            logger.info(response)
+        except ClientError as e:
+            print(f"An error occurred: {e}")
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+
+    def upload_to_s3(self, file_path, bucket_name, object_name=None):
+        if object_name is None:
+            object_name = os.path.basename(file_path)
+
+        s3_client = self.session.client('s3')
+        try:
+            s3_client.upload_file(file_path, bucket_name, object_name)
+        except ClientError as e:
+            logger.error(e)
+            return False
+        return True
     def handle_message(self, msg):
         logger.info(f'Incoming message: {msg}')
 
         if self.is_current_msg_photo(msg):
             photo_path = self.download_user_photo(msg)
-
-            # TODO upload the photo to S3
-            # TODO send a job to the SQS queue
-            # TODO send message to the Telegram end-user (e.g. Your image is being processed. Please wait...)
+            # TODO upload the photo to S3(done)
+            bucket = os.environ['BUCKET_NAME']
+            self.upload_to_s3(photo_path,bucket,photo_path)
+            # TODO send a job to the SQS queue(done)
+            self.send_message_to_sqs(f"{photo_path},{msg['chat']['id']}")
+            # TODO send message to the Telegram end-user (e.g. Your image is being processed. Please wait...)(done)
+            self.send_text(msg['chat']['id'], f'Your image is being processed. Please wait...')
