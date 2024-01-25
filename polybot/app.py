@@ -79,6 +79,9 @@ def load_test():
     bot.handle_message(req['message'])
     return 'Ok'
 
+@app.route('/health')
+def health_check():
+    return 'OK', 200
 
 if __name__ == "__main__":
     bot = ObjectDetectionBot(TELEGRAM_TOKEN, TELEGRAM_APP_URL)

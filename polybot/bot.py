@@ -24,7 +24,7 @@ class Bot:
 
         # TODO set the webhook URL with certificate(done)
         self.telegram_bot_client.set_webhook(url=f'{telegram_chat_url}/{token}/', timeout=60, certificate=open(
-            'cert.pem', 'r'))
+            'certificate.pem', 'r'))
 
         logger.info(f'Telegram Bot information\n\n{self.telegram_bot_client.get_me()}')
 
@@ -136,3 +136,8 @@ class ObjectDetectionBot(Bot):
             self.send_message_to_sqs(f"{photo_path},{msg['chat']['id']}")
             # TODO send message to the Telegram end-user (e.g. Your image is being processed. Please wait...)(done)
             self.send_text(msg['chat']['id'], f'Your image is being processed. Please wait...')
+        elif "text" in msg:
+            content_msg = msg['text']
+            self.send_text(msg['chat']['id'], f'Your original message: {content_msg}\n send me a photo')
+        else:
+            self.send_text(msg['chat']['id'], "i don't know how to handle this  \n send me a photo")
