@@ -124,6 +124,15 @@ class ObjectDetectionBot(Bot):
             logger.error(e)
             return False
         return True
+    def download_pred_photo_s3(self,bucket_name,s3_photo_path, local_path):
+        s3_client = self.session.client('s3')
+        try:
+            s3_client.download_file(bucket_name, s3_photo_path, local_path)
+            logger.info(f'downloaded successfully to {local_path}')
+        except Exception as e:
+            logger.error(f'Error downloading image from S3:{e}')
+            return None
+        return local_path
     def handle_message(self, msg):
         logger.info(f'Incoming message: {msg}')
 

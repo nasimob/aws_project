@@ -70,6 +70,11 @@ def results():
     logger.info(f'chat id: {chat_id}')
     text_results = bot.handle_dynamo_message(prediction_summary)
     bot.send_text(chat_id, text_results)
+    original_photo_path= prediction_summary['original_img_path']
+    s3_pred_photo_path = f'predicted/{original_photo_path}'
+    bucket = os.environ['BUCKET_NAME']
+    local_photo_path = bot.download_pred_photo_s3(bucket,s3_pred_photo_path,original_photo_path)
+    bot.send_photo(chat_id,local_photo_path)
     return 'Ok'
 
 
